@@ -1,16 +1,17 @@
 const puppeteer = require("puppeteer");
 const moment = require("moment");
-
+const fs = require("fs").promises;
 const SEARCH_URL =
   "https://www.welcometothejungle.com/en/jobs?refinementList%5Boffices.country_code%5D%5B%5D=FR&refinementList%5Bcontract_type%5D%5B%5D=internship&refinementList%5Bcontract_type%5D%5B%5D=temporary&refinementList%5Bcontract_type%5D%5B%5D=full_time&query=javascript%20developer&page=1&aroundQuery=France&sortBy=mostRecent";
 const scrap = async () => {
   try {
-    var browser = await puppeteer.launch({ headless: false });
+    console.log("Scraping started.");
+    var browser = await puppeteer.launch({ headless: "new" });
     const page = await browser.newPage();
-
+    console.log("Page created.");
     await page.setRequestInterception(true);
     page.on("request", request => {
-      console.log(request.method(), request.url(), request.postData());
+      //   console.log(request.method(), request.url(), request.postData());
       if (["stylesheet", "font", "image"].includes(request.resourceType()))
         request.abort();
       else request.continue();
@@ -47,11 +48,42 @@ const scrap = async () => {
       },
       limitDate
     );
-    console.log(jobs);
+    const sample = jobs.slice(0, 4);
+    // console.log(jobs);
+    for (const job of sample) {
+      await page.goto(job.url, { waitUntil: "networkidle0" });
+      const data = await page.evaluate(() => {
+        const attributes = [
+          ...document.querySelectorAll(
+            "div[data-testid='job-metadata-block'] div.sc-bXCLTC.hdepoj > div"
+          ),
+        ].map(el => el.textContent.trim());
+        const companyLink = document.querySelector(
+          "div#the-company-section a.sc-jdUcAg.gLJznh"
+        );
+
+        return {
+          attributes,
+          company: !companyLink
+            ? null
+            : {
+                name: companyLink.textContent.trim(),
+                url: companyLink.href,
+              },
+        };
+      });
+      for (const key in data) job[key] = data[key];
+    }
+    // await fs.writeFile(
+    //   `./jobs-${Date.now()}.json`,
+    //   JSON.stringify(sample, null, 2)
+    // );
+    return jobs;
   } catch (error) {
     console.error(error);
   } finally {
-    // if (browser) await browser.close();
+    console.log("Scraping finished");
+    if (browser) await browser.close();
   }
 };
 
